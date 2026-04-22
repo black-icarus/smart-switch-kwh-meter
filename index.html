@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart KwH Meter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0e17;
+            --card: #111827;
+            --card-border: #1e293b;
+            --text: #e2e8f0;
+            --text-dim: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --accent-cyan: #06b6d4;
+            --glow-blue: rgba(59, 130, 246, 0.15);
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 520px;
+            margin: 0 auto;
+            padding: 20px 16px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .header-icon { font-size: 32px; margin-bottom: 8px; }
+
+        .header h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent-red);
+            transition: background 0.3s;
+        }
+
+        .status-dot.online {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        .status-text {
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-dim);
+        }
+
+        /* Relay control card */
+        .relay-card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: border-color 0.3s;
+        }
+
+        .relay-card.relay-on {
+            border-color: rgba(16, 185, 129, 0.4);
+        }
+
+        .relay-card.relay-off {
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+
+        .relay-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .relay-icon {
+            font-size: 28px;
+        }
+
+        .relay-label {
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .relay-status {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .relay-status.on { color: var(--accent-green); }
+        .relay-status.off { color: var(--accent-red); }
+
+        /* Toggle switch */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .toggle-btn {
+            position: relative;
+            width: 64px;
+            height: 34px;
+            border-radius: 17px;
+            border: none;
+            cursor: pointer;
+            background: #374151;
+            transition: background 0.3s;
+            outline: none;
+        }
+
+        .toggle-btn.on {
+            background: var(--accent-green);
+            box-shadow: 0 0 16px rgba(16, 185, 129, 0.3);
+        }
+
+        .toggle-btn::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: white;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .toggle-btn.on::after {
+            transform: translateX(30px);
+        }
+
+        /* Power hero */
+        .power-hero {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 32px 24px;
+            text-align: center;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .power-hero::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(circle at center, var(--glow-blue), transparent 60%);
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .power-label {
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+            position: relative;
+        }
+
+        .power-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 64px;
+            font-weight: 700;
+            color: var(--accent-blue);
+            line-height: 1;
+            position: relative;
+            transition: color 0.3s;
+        }
+
+        .power-value.warning { color: var(--accent-yellow); }
+        .power-value.danger { color: var(--accent-red); }
+
+        .power-unit {
+            font-size: 20px;
+            color: var(--text-dim);
+            font-weight: 400;
+            margin-left: 4px;
+        }
+
+        .power-bar-container { margin-top: 20px; position: relative; }
+
+        .power-bar-bg {
+            height: 6px;
+            background: #1e293b;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .power-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+            width: 0%;
+            transition: width 0.6s ease, background 0.3s;
+        }
+
+        .power-bar-fill.warning {
+            background: linear-gradient(90deg, var(--accent-yellow), var(--accent-red));
+        }
+
+        .power-bar-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+        }
+
+        .power-bar-labels span {
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-dim);
+        }
+
+        /* Metrics grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .metric-card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 18px 16px;
+            transition: border-color 0.3s;
+        }
+
+        .metric-card:hover { border-color: #334155; }
+        .metric-icon { font-size: 18px; margin-bottom: 10px; }
+
+        .metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .metric-unit {
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--text-dim);
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .metric-card.voltage .metric-value { color: var(--accent-yellow); }
+        .metric-card.current .metric-value { color: var(--accent-cyan); }
+        .metric-card.energy .metric-value { color: var(--accent-green); }
+        .metric-card.pf .metric-value { color: var(--accent-purple); }
+        .metric-card.frequency .metric-value { color: var(--accent-blue); }
+
+        /* Cost card */
+        .cost-card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .cost-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .cost-card-header span:first-child { font-size: 16px; }
+        .cost-card-header span:last-child {
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .cost-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .cost-row:last-child { border-bottom: none; }
+        .cost-label { font-size: 13px; color: var(--text-dim); }
+
+        .cost-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--accent-green);
+        }
+
+        .last-update {
+            text-align: center;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-dim);
+            margin-top: 12px;
+            padding-bottom: 20px;
+        }
+
+        .offline-msg {
+            display: none;
+            text-align: center;
+            padding: 12px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-red);
+        }
+
+        .offline-msg.show { display: block; }
+
+        @media (max-width: 360px) {
+            .power-value { font-size: 48px; }
+            .metric-value { font-size: 24px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-icon">⚡</div>
+            <h1>Smart KwH Meter</h1>
+            <div class="status-bar">
+                <div class="status-dot" id="statusDot"></div>
+                <span class="status-text" id="statusText">Connecting...</span>
+            </div>
+        </div>
+
+        <div class="offline-msg" id="offlineMsg">⚠ Tidak terhubung ke MQTT broker</div>
+
+        <!-- Relay Control -->
+        <div class="relay-card relay-off" id="relayCard">
+            <div class="relay-info">
+                <div class="relay-icon">🔌</div>
+                <div>
+                    <div class="relay-label">Smart Switch</div>
+                    <div class="relay-status off" id="relayStatus">--</div>
+                </div>
+            </div>
+            <div class="toggle-container">
+                <button class="toggle-btn" id="relayToggle" onclick="toggleRelay()"></button>
+            </div>
+        </div>
+
+        <!-- Power hero -->
+        <div class="power-hero">
+            <div class="power-label">Daya Aktif</div>
+            <div class="power-value" id="powerValue">--<span class="power-unit">W</span></div>
+            <div class="power-bar-container">
+                <div class="power-bar-bg">
+                    <div class="power-bar-fill" id="powerBar"></div>
+                </div>
+                <div class="power-bar-labels">
+                    <span>0W</span>
+                    <span id="maxLabel">500W</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics -->
+        <div class="metrics-grid">
+            <div class="metric-card voltage">
+                <div class="metric-icon">🔌</div>
+                <div class="metric-value" id="voltageValue">--<span class="metric-unit">V</span></div>
+                <div class="metric-label">Tegangan</div>
+            </div>
+            <div class="metric-card current">
+                <div class="metric-icon">〰️</div>
+                <div class="metric-value" id="currentValue">--<span class="metric-unit">A</span></div>
+                <div class="metric-label">Arus</div>
+            </div>
+            <div class="metric-card energy">
+                <div class="metric-icon">📊</div>
+                <div class="metric-value" id="energyValue">--<span class="metric-unit">kWh</span></div>
+                <div class="metric-label">Energi</div>
+            </div>
+            <div class="metric-card pf">
+                <div class="metric-icon">📐</div>
+                <div class="metric-value" id="pfValue">--</div>
+                <div class="metric-label">Power Factor</div>
+            </div>
+            <div class="metric-card frequency" style="grid-column: span 2;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="metric-icon">🔄</div>
+                        <div class="metric-value" id="freqValue">--<span class="metric-unit">Hz</span></div>
+                        <div class="metric-label">Frekuensi</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="metric-icon">⏱️</div>
+                        <div class="metric-value" style="color: var(--accent-blue); font-size: 20px;" id="uptimeValue">--</div>
+                        <div class="metric-label">Uptime</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cost -->
+        <div class="cost-card">
+            <div class="cost-card-header">
+                <span>💰</span>
+                <span>Estimasi Biaya</span>
+            </div>
+            <div class="cost-row">
+                <span class="cost-label">Tarif per kWh (R-1 / 1300VA)</span>
+                <span class="cost-value">Rp 1.444</span>
+            </div>
+            <div class="cost-row">
+                <span class="cost-label">Biaya sesi ini</span>
+                <span class="cost-value" id="costValue">Rp 0</span>
+            </div>
+            <div class="cost-row">
+                <span class="cost-label">Biaya per jam (estimasi)</span>
+                <span class="cost-value" id="costPerHour">Rp 0</span>
+            </div>
+        </div>
+
+        <div class="last-update" id="lastUpdate">Menunggu data...</div>
+    </div>
+
+    <script>
+        // ===== MQTT CONFIG =====
+        const MQTT_CONFIG = {
+            host: 'wss://c8a97306a3e246be85a5da1e4f90a358.s1.eu.hivemq.cloud:8884/mqtt',
+            username: 'kwhmeter',
+            password: 'KwhMeter2026!',
+            topicData: 'kwhmeter/data',
+            topicRelayCmd: 'kwhmeter/control/relay',
+            topicRelaySts: 'kwhmeter/status/relay'
+        };
+
+        const TARIF_PER_KWH = 1444.70;
+        const MAX_POWER = 500;
+
+        let mqttClient = null;
+        let connected = false;
+        let messageCount = 0;
+        let startTime = Date.now();
+        let currentRelayState = false;
+
+        // ===== DOM =====
+        const el = {
+            statusDot: document.getElementById('statusDot'),
+            statusText: document.getElementById('statusText'),
+            offlineMsg: document.getElementById('offlineMsg'),
+            powerValue: document.getElementById('powerValue'),
+            powerBar: document.getElementById('powerBar'),
+            voltageValue: document.getElementById('voltageValue'),
+            currentValue: document.getElementById('currentValue'),
+            energyValue: document.getElementById('energyValue'),
+            pfValue: document.getElementById('pfValue'),
+            freqValue: document.getElementById('freqValue'),
+            uptimeValue: document.getElementById('uptimeValue'),
+            costValue: document.getElementById('costValue'),
+            costPerHour: document.getElementById('costPerHour'),
+            lastUpdate: document.getElementById('lastUpdate'),
+            relayCard: document.getElementById('relayCard'),
+            relayStatus: document.getElementById('relayStatus'),
+            relayToggle: document.getElementById('relayToggle'),
+        };
+
+        // ===== TOGGLE RELAY =====
+        function toggleRelay() {
+            if (!mqttClient || !connected) return;
+            const newState = !currentRelayState;
+            mqttClient.publish(MQTT_CONFIG.topicRelayCmd, newState ? 'ON' : 'OFF');
+            console.log('[MQTT] Sent relay command:', newState ? 'ON' : 'OFF');
+        }
+
+        function updateRelayUI(isOn) {
+            currentRelayState = isOn;
+            el.relayStatus.textContent = isOn ? 'ON' : 'OFF';
+            el.relayStatus.className = 'relay-status ' + (isOn ? 'on' : 'off');
+            el.relayToggle.className = 'toggle-btn ' + (isOn ? 'on' : '');
+            el.relayCard.className = 'relay-card ' + (isOn ? 'relay-on' : 'relay-off');
+        }
+
+        // ===== MQTT =====
+        function connectMQTT() {
+            el.statusText.textContent = 'Connecting...';
+
+            mqttClient = mqtt.connect(MQTT_CONFIG.host, {
+                username: MQTT_CONFIG.username,
+                password: MQTT_CONFIG.password,
+                clientId: 'web-kwh-' + Math.random().toString(16).substring(2, 8),
+                clean: true,
+                reconnectPeriod: 5000,
+            });
+
+            mqttClient.on('connect', () => {
+                connected = true;
+                el.statusDot.classList.add('online');
+                el.statusText.textContent = 'Online';
+                el.offlineMsg.classList.remove('show');
+                mqttClient.subscribe(MQTT_CONFIG.topicData);
+                mqttClient.subscribe(MQTT_CONFIG.topicRelaySts);
+                console.log('[MQTT] Connected!');
+            });
+
+            mqttClient.on('message', (topic, message) => {
+                try {
+                    const msg = message.toString();
+
+                    if (topic === MQTT_CONFIG.topicRelaySts) {
+                        updateRelayUI(msg === 'ON');
+                        return;
+                    }
+
+                    if (topic === MQTT_CONFIG.topicData) {
+                        const data = JSON.parse(msg);
+                        messageCount++;
+                        updateDashboard(data);
+
+                        // Update relay dari data payload juga
+                        if (data.relay !== undefined) {
+                            updateRelayUI(data.relay === 'ON');
+                        }
+                    }
+                } catch (e) {
+                    console.error('[MQTT] Parse error:', e);
+                }
+            });
+
+            mqttClient.on('offline', () => {
+                connected = false;
+                el.statusDot.classList.remove('online');
+                el.statusText.textContent = 'Offline';
+                el.offlineMsg.classList.add('show');
+            });
+
+            mqttClient.on('error', (err) => {
+                console.error('[MQTT] Error:', err);
+                el.statusText.textContent = 'Error';
+                el.offlineMsg.classList.add('show');
+            });
+
+            mqttClient.on('reconnect', () => {
+                el.statusText.textContent = 'Reconnecting...';
+            });
+        }
+
+        // ===== UPDATE DASHBOARD =====
+        function updateDashboard(data) {
+            const power = data.power || 0;
+            el.powerValue.innerHTML = `${power.toFixed(1)}<span class="power-unit">W</span>`;
+
+            const pct = Math.min((power / MAX_POWER) * 100, 100);
+            el.powerBar.style.width = pct + '%';
+
+            if (power > MAX_POWER * 0.8) {
+                el.powerValue.className = 'power-value danger';
+                el.powerBar.className = 'power-bar-fill warning';
+            } else if (power > MAX_POWER * 0.6) {
+                el.powerValue.className = 'power-value warning';
+                el.powerBar.className = 'power-bar-fill warning';
+            } else {
+                el.powerValue.className = 'power-value';
+                el.powerBar.className = 'power-bar-fill';
+            }
+
+            el.voltageValue.innerHTML = `${(data.voltage || 0).toFixed(1)}<span class="metric-unit">V</span>`;
+            el.currentValue.innerHTML = `${(data.current || 0).toFixed(2)}<span class="metric-unit">A</span>`;
+            el.energyValue.innerHTML = `${(data.energy || 0).toFixed(3)}<span class="metric-unit">kWh</span>`;
+            el.pfValue.textContent = (data.pf || 0).toFixed(2);
+            el.freqValue.innerHTML = `${(data.frequency || 0).toFixed(1)}<span class="metric-unit">Hz</span>`;
+
+            const energy = data.energy || 0;
+            const cost = energy * TARIF_PER_KWH;
+            el.costValue.textContent = `Rp ${cost.toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+
+            const costHour = (power / 1000) * TARIF_PER_KWH;
+            el.costPerHour.textContent = `Rp ${costHour.toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+
+            const now = new Date();
+            el.lastUpdate.textContent = `Update terakhir: ${now.toLocaleTimeString('id-ID')} · ${messageCount} pesan diterima`;
+        }
+
+        // ===== UPTIME =====
+        setInterval(() => {
+            const diff = Math.floor((Date.now() - startTime) / 1000);
+            const h = Math.floor(diff / 3600);
+            const m = Math.floor((diff % 3600) / 60);
+            const s = diff % 60;
+            el.uptimeValue.textContent = `${h}h ${m}m ${s}s`;
+        }, 1000);
+
+        // ===== START =====
+        connectMQTT();
+    </script>
+</body>
+</html>
