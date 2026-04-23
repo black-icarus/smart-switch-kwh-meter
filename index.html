@@ -3,669 +3,430 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart KwH Meter</title>
+    <title>SmartPower</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        *{margin:0;padding:0;box-sizing:border-box}
 
-        :root {
-            --bg: #0a0e17;
-            --card: #111827;
-            --card-border: #1e293b;
-            --text: #e2e8f0;
-            --text-dim: #64748b;
-            --accent-blue: #3b82f6;
-            --accent-green: #10b981;
-            --accent-yellow: #f59e0b;
-            --accent-red: #ef4444;
-            --accent-purple: #8b5cf6;
-            --accent-cyan: #06b6d4;
-            --glow-blue: rgba(59, 130, 246, 0.15);
+        :root{
+            --bg:#000;
+            --surface:#0a0a0a;
+            --border:#1a1a1a;
+            --border-lit:#252525;
+            --white:#fff;
+            --w60:rgba(255,255,255,0.6);
+            --w30:rgba(255,255,255,0.3);
+            --w10:rgba(255,255,255,0.1);
+            --w05:rgba(255,255,255,0.05);
+            --green:#00ff88;
+            --green-d:rgba(0,255,136,0.12);
+            --red:#ff3b3b;
+            --red-d:rgba(255,59,59,0.12);
+            --amber:#ffb800;
+            --amber-d:rgba(255,184,0,0.12);
+            --cyan:#00e5ff;
+            --purple:#b388ff;
         }
 
-        body {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            overflow-x: hidden;
+        body{
+            font-family:'Outfit',sans-serif;
+            background:var(--bg);color:var(--white);
+            min-height:100vh;-webkit-font-smoothing:antialiased;
         }
 
-        body::before {
-            content: '';
-            position: fixed;
-            inset: 0;
-            background-image:
-                linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
-            background-size: 60px 60px;
-            pointer-events: none;
-            z-index: 0;
+        .app{max-width:460px;margin:0 auto;padding:20px 16px 40px}
+
+        /* HEADER */
+        .hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
+        .hdr-l{display:flex;align-items:center;gap:10px}
+        .hdr-m{width:32px;height:32px;background:var(--white);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+        .hdr-n{font-family:'Space Mono',monospace;font-size:15px;font-weight:700;letter-spacing:-0.5px}
+        .hdr-p{display:flex;align-items:center;gap:6px;padding:4px 12px;border:1px solid var(--border);border-radius:100px;font-size:11px;font-weight:500;color:var(--w60)}
+        .hdr-d{width:6px;height:6px;border-radius:50%;background:var(--red);transition:all 0.3s}
+        .hdr-d.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+
+        /* RELAY */
+        .sw{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;transition:border-color 0.3s}
+        .sw.on{border-color:rgba(0,255,136,0.2)}
+        .sw.off{border-color:rgba(255,59,59,0.1)}
+        .sw-l{display:flex;align-items:center;gap:14px}
+        .sw-i{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;transition:background 0.3s}
+        .sw.on .sw-i{background:var(--green-d)}
+        .sw.off .sw-i{background:var(--red-d)}
+        .sw-lb{font-size:10px;font-weight:500;color:var(--w30);text-transform:uppercase;letter-spacing:1.5px}
+        .sw-v{font-family:'Space Mono',monospace;font-size:20px;font-weight:700;transition:color 0.3s}
+        .sw.on .sw-v{color:var(--green)}
+        .sw.off .sw-v{color:var(--red)}
+        .tgl{width:52px;height:28px;border-radius:14px;border:none;cursor:pointer;background:#222;position:relative;transition:background 0.3s;outline:none}
+        .tgl.on{background:var(--green)}
+        .tgl::after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--white);transition:transform 0.2s cubic-bezier(0.4,0,0.2,1);box-shadow:0 1px 4px rgba(0,0,0,0.4)}
+        .tgl.on::after{transform:translateX(24px)}
+
+        /* POWER */
+        .pwr{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px 20px 22px;text-align:center;margin-bottom:10px;transition:border-color 0.5s}
+        .pwr.alert-warn{border-color:rgba(255,184,0,0.3);animation:none}
+        .pwr.alert-danger{border-color:rgba(255,59,59,0.4);animation:pulseDanger 1.5s infinite}
+        @keyframes pulseDanger{0%,100%{border-color:rgba(255,59,59,0.4)}50%{border-color:rgba(255,59,59,0.15)}}
+        .pwr-lb{font-size:10px;font-weight:500;color:var(--w30);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px}
+        .pwr-n{font-family:'Space Mono',monospace;font-size:60px;font-weight:700;line-height:1;color:var(--white);transition:color 0.3s}
+        .pwr-n.warn{color:var(--amber)}
+        .pwr-n.danger{color:var(--red)}
+        .pwr-u{font-size:18px;font-weight:400;color:var(--w30);margin-left:2px}
+        .pwr-bar{margin-top:20px;height:3px;background:var(--w05);border-radius:2px;overflow:hidden;position:relative}
+        .pwr-fill{height:100%;border-radius:2px;background:var(--white);width:0%;transition:width 0.5s ease,background 0.3s}
+        .pwr-fill.warn{background:var(--amber)}
+        .pwr-fill.danger{background:var(--red)}
+        .pwr-info{display:flex;justify-content:space-between;margin-top:6px;font-size:9px;font-family:'Space Mono',monospace;color:var(--w30)}
+
+        /* ALERT BANNER */
+        .alert{
+            display:none;
+            padding:14px 16px;
+            border-radius:12px;
+            margin-bottom:10px;
+            font-family:'Space Mono',monospace;
+            font-size:12px;
+            font-weight:600;
+            text-align:center;
+            animation:slideIn 0.3s ease;
         }
+        @keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+        .alert.warn{display:block;background:var(--amber-d);border:1px solid rgba(255,184,0,0.25);color:var(--amber)}
+        .alert.danger{display:block;background:var(--red-d);border:1px solid rgba(255,59,59,0.25);color:var(--red)}
 
-        .container {
-            max-width: 520px;
-            margin: 0 auto;
-            padding: 20px 16px;
-            position: relative;
-            z-index: 1;
+        /* GRID */
+        .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+        .cell{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 12px}
+        .cell-v{font-family:'Space Mono',monospace;font-size:18px;font-weight:700;line-height:1;margin-bottom:4px}
+        .cell-u{font-size:11px;font-weight:400;color:var(--w30)}
+        .cell-n{font-size:9px;font-weight:500;color:var(--w30);text-transform:uppercase;letter-spacing:0.5px}
+        .c1 .cell-v{color:var(--amber)}
+        .c2 .cell-v{color:var(--cyan)}
+        .c3 .cell-v{color:var(--green)}
+        .c4 .cell-v{color:var(--purple)}
+        .c5 .cell-v{color:#4d9fff}
+        .c6 .cell-v{color:var(--green)}
+
+        /* STATS */
+        .stats{
+            background:var(--surface);border:1px solid var(--border);
+            border-radius:16px;padding:16px 18px;margin-bottom:10px;
         }
+        .stats-ttl{font-size:10px;font-weight:500;color:var(--w30);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px}
+        .stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+        .stats-item{text-align:center;padding:12px 8px;background:var(--w05);border-radius:10px}
+        .stats-val{font-family:'Space Mono',monospace;font-size:16px;font-weight:700;color:var(--white);margin-bottom:2px}
+        .stats-lbl{font-size:9px;color:var(--w30);text-transform:uppercase;letter-spacing:0.5px}
 
-        /* Header */
-        .header {
-            text-align: center;
-            margin-bottom: 28px;
+        /* THRESHOLD */
+        .thr{
+            background:var(--surface);border:1px solid var(--border);
+            border-radius:16px;padding:16px 18px;margin-bottom:10px;
         }
+        .thr-ttl{font-size:10px;font-weight:500;color:var(--w30);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px}
+        .thr-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+        .thr-label{font-size:12px;color:var(--w60)}
+        .thr-value{font-family:'Space Mono',monospace;font-size:14px;font-weight:700;min-width:60px;text-align:right}
+        .thr-value.warn-c{color:var(--amber)}
+        .thr-value.danger-c{color:var(--red)}
 
-        .header-icon { font-size: 32px; margin-bottom: 8px; }
-
-        .header h1 {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 22px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        /* Slider */
+        .slider-wrap{margin-bottom:8px}
+        .slider{
+            -webkit-appearance:none;appearance:none;
+            width:100%;height:4px;
+            background:var(--w10);border-radius:2px;
+            outline:none;cursor:pointer;
         }
-
-        .status-bar {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            margin-top: 10px;
+        .slider::-webkit-slider-thumb{
+            -webkit-appearance:none;appearance:none;
+            width:18px;height:18px;border-radius:50%;
+            background:var(--white);cursor:pointer;
+            box-shadow:0 0 6px rgba(255,255,255,0.2);
         }
-
-        .status-dot {
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            background: var(--accent-red);
-            transition: background 0.3s;
+        .slider::-moz-range-thumb{
+            width:18px;height:18px;border-radius:50%;
+            background:var(--white);cursor:pointer;border:none;
         }
+        .slider.warn-s::-webkit-slider-thumb{background:var(--amber)}
+        .slider.danger-s::-webkit-slider-thumb{background:var(--red)}
 
-        .status-dot.online {
-            background: var(--accent-green);
-            box-shadow: 0 0 8px var(--accent-green);
-            animation: pulse 2s infinite;
+        /* COST */
+        .cst{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:10px}
+        .cst-ttl{font-size:10px;font-weight:500;color:var(--w30);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:12px}
+        .cst-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--w05)}
+        .cst-row:last-child{border-bottom:none}
+        .cst-k{font-size:13px;color:var(--w30);font-weight:400}
+        .cst-v{font-family:'Space Mono',monospace;font-size:14px;font-weight:600;color:var(--green)}
+
+        /* BEBAN DETECTION */
+        .beban{
+            background:var(--surface);border:1px solid var(--border);
+            border-radius:16px;padding:16px 18px;margin-bottom:10px;
         }
+        .beban-ttl{font-size:10px;font-weight:500;color:var(--w30);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px}
+        .beban-row{display:flex;align-items:center;gap:10px}
+        .beban-ico{font-size:22px}
+        .beban-info{}
+        .beban-name{font-size:14px;font-weight:600}
+        .beban-range{font-size:11px;color:var(--w30);font-family:'Space Mono',monospace}
 
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .ftr{text-align:center;margin-top:16px;font-size:10px;color:var(--w30);font-family:'Space Mono',monospace}
 
-        .status-text {
-            font-size: 12px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-dim);
-        }
-
-        /* Relay control card */
-        .relay-card {
-            background: var(--card);
-            border: 1px solid var(--card-border);
-            border-radius: 20px;
-            padding: 20px 24px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: border-color 0.3s;
-        }
-
-        .relay-card.relay-on {
-            border-color: rgba(16, 185, 129, 0.4);
-        }
-
-        .relay-card.relay-off {
-            border-color: rgba(239, 68, 68, 0.4);
-        }
-
-        .relay-info {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-
-        .relay-icon {
-            font-size: 28px;
-        }
-
-        .relay-label {
-            font-size: 11px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-        }
-
-        .relay-status {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 20px;
-            font-weight: 700;
-        }
-
-        .relay-status.on { color: var(--accent-green); }
-        .relay-status.off { color: var(--accent-red); }
-
-        /* Toggle switch */
-        .toggle-container {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .toggle-btn {
-            position: relative;
-            width: 64px;
-            height: 34px;
-            border-radius: 17px;
-            border: none;
-            cursor: pointer;
-            background: #374151;
-            transition: background 0.3s;
-            outline: none;
-        }
-
-        .toggle-btn.on {
-            background: var(--accent-green);
-            box-shadow: 0 0 16px rgba(16, 185, 129, 0.3);
-        }
-
-        .toggle-btn::after {
-            content: '';
-            position: absolute;
-            top: 3px;
-            left: 3px;
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: white;
-            transition: transform 0.3s;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .toggle-btn.on::after {
-            transform: translateX(30px);
-        }
-
-        /* Power hero */
-        .power-hero {
-            background: var(--card);
-            border: 1px solid var(--card-border);
-            border-radius: 20px;
-            padding: 32px 24px;
-            text-align: center;
-            margin-bottom: 16px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .power-hero::before {
-            content: '';
-            position: absolute;
-            top: -50%; left: -50%;
-            width: 200%; height: 200%;
-            background: radial-gradient(circle at center, var(--glow-blue), transparent 60%);
-            opacity: 0.4;
-            pointer-events: none;
-        }
-
-        .power-label {
-            font-size: 11px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-bottom: 8px;
-            position: relative;
-        }
-
-        .power-value {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 64px;
-            font-weight: 700;
-            color: var(--accent-blue);
-            line-height: 1;
-            position: relative;
-            transition: color 0.3s;
-        }
-
-        .power-value.warning { color: var(--accent-yellow); }
-        .power-value.danger { color: var(--accent-red); }
-
-        .power-unit {
-            font-size: 20px;
-            color: var(--text-dim);
-            font-weight: 400;
-            margin-left: 4px;
-        }
-
-        .power-bar-container { margin-top: 20px; position: relative; }
-
-        .power-bar-bg {
-            height: 6px;
-            background: #1e293b;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-
-        .power-bar-fill {
-            height: 100%;
-            border-radius: 3px;
-            background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
-            width: 0%;
-            transition: width 0.6s ease, background 0.3s;
-        }
-
-        .power-bar-fill.warning {
-            background: linear-gradient(90deg, var(--accent-yellow), var(--accent-red));
-        }
-
-        .power-bar-labels {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 6px;
-        }
-
-        .power-bar-labels span {
-            font-size: 10px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-dim);
-        }
-
-        /* Metrics grid */
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .metric-card {
-            background: var(--card);
-            border: 1px solid var(--card-border);
-            border-radius: 16px;
-            padding: 18px 16px;
-            transition: border-color 0.3s;
-        }
-
-        .metric-card:hover { border-color: #334155; }
-        .metric-icon { font-size: 18px; margin-bottom: 10px; }
-
-        .metric-value {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 28px;
-            font-weight: 700;
-            line-height: 1;
-            margin-bottom: 4px;
-        }
-
-        .metric-unit {
-            font-size: 14px;
-            font-weight: 400;
-            color: var(--text-dim);
-        }
-
-        .metric-label {
-            font-size: 11px;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .metric-card.voltage .metric-value { color: var(--accent-yellow); }
-        .metric-card.current .metric-value { color: var(--accent-cyan); }
-        .metric-card.energy .metric-value { color: var(--accent-green); }
-        .metric-card.pf .metric-value { color: var(--accent-purple); }
-        .metric-card.frequency .metric-value { color: var(--accent-blue); }
-
-        /* Cost card */
-        .cost-card {
-            background: var(--card);
-            border: 1px solid var(--card-border);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 16px;
-        }
-
-        .cost-card-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 14px;
-        }
-
-        .cost-card-header span:first-child { font-size: 16px; }
-        .cost-card-header span:last-child {
-            font-size: 12px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .cost-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid #1e293b;
-        }
-
-        .cost-row:last-child { border-bottom: none; }
-        .cost-label { font-size: 13px; color: var(--text-dim); }
-
-        .cost-value {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--accent-green);
-        }
-
-        .last-update {
-            text-align: center;
-            font-size: 11px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--text-dim);
-            margin-top: 12px;
-            padding-bottom: 20px;
-        }
-
-        .offline-msg {
-            display: none;
-            text-align: center;
-            padding: 12px;
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            border-radius: 12px;
-            margin-bottom: 16px;
-            font-size: 13px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--accent-red);
-        }
-
-        .offline-msg.show { display: block; }
-
-        @media (max-width: 360px) {
-            .power-value { font-size: 48px; }
-            .metric-value { font-size: 24px; }
+        @media(max-width:360px){
+            .pwr-n{font-size:46px}
+            .cell-v{font-size:15px}
+            .grid{grid-template-columns:1fr 1fr}
+            .stats-grid{grid-template-columns:1fr 1fr 1fr}
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-icon">⚡</div>
-            <h1>Smart KwH Meter</h1>
-            <div class="status-bar">
-                <div class="status-dot" id="statusDot"></div>
-                <span class="status-text" id="statusText">Connecting...</span>
-            </div>
+<div class="app">
+
+    <!-- HEADER -->
+    <div class="hdr">
+        <div class="hdr-l">
+            <div class="hdr-m">⚡</div>
+            <div class="hdr-n">SmartPower</div>
         </div>
-
-        <div class="offline-msg" id="offlineMsg">⚠ Tidak terhubung ke MQTT broker</div>
-
-        <!-- Relay Control -->
-        <div class="relay-card relay-off" id="relayCard">
-            <div class="relay-info">
-                <div class="relay-icon">🔌</div>
-                <div>
-                    <div class="relay-label">Smart Switch</div>
-                    <div class="relay-status off" id="relayStatus">--</div>
-                </div>
-            </div>
-            <div class="toggle-container">
-                <button class="toggle-btn" id="relayToggle" onclick="toggleRelay()"></button>
-            </div>
+        <div class="hdr-p">
+            <div class="hdr-d" id="dot"></div>
+            <span id="sts">Connecting</span>
         </div>
-
-        <!-- Power hero -->
-        <div class="power-hero">
-            <div class="power-label">Daya Aktif</div>
-            <div class="power-value" id="powerValue">--<span class="power-unit">W</span></div>
-            <div class="power-bar-container">
-                <div class="power-bar-bg">
-                    <div class="power-bar-fill" id="powerBar"></div>
-                </div>
-                <div class="power-bar-labels">
-                    <span>0W</span>
-                    <span id="maxLabel">500W</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Metrics -->
-        <div class="metrics-grid">
-            <div class="metric-card voltage">
-                <div class="metric-icon">🔌</div>
-                <div class="metric-value" id="voltageValue">--<span class="metric-unit">V</span></div>
-                <div class="metric-label">Tegangan</div>
-            </div>
-            <div class="metric-card current">
-                <div class="metric-icon">〰️</div>
-                <div class="metric-value" id="currentValue">--<span class="metric-unit">A</span></div>
-                <div class="metric-label">Arus</div>
-            </div>
-            <div class="metric-card energy">
-                <div class="metric-icon">📊</div>
-                <div class="metric-value" id="energyValue">--<span class="metric-unit">kWh</span></div>
-                <div class="metric-label">Energi</div>
-            </div>
-            <div class="metric-card pf">
-                <div class="metric-icon">📐</div>
-                <div class="metric-value" id="pfValue">--</div>
-                <div class="metric-label">Power Factor</div>
-            </div>
-            <div class="metric-card frequency" style="grid-column: span 2;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div class="metric-icon">🔄</div>
-                        <div class="metric-value" id="freqValue">--<span class="metric-unit">Hz</span></div>
-                        <div class="metric-label">Frekuensi</div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div class="metric-icon">⏱️</div>
-                        <div class="metric-value" style="color: var(--accent-blue); font-size: 20px;" id="uptimeValue">--</div>
-                        <div class="metric-label">Uptime</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Cost -->
-        <div class="cost-card">
-            <div class="cost-card-header">
-                <span>💰</span>
-                <span>Estimasi Biaya</span>
-            </div>
-            <div class="cost-row">
-                <span class="cost-label">Tarif per kWh (R-1 / 1300VA)</span>
-                <span class="cost-value">Rp 1.444</span>
-            </div>
-            <div class="cost-row">
-                <span class="cost-label">Biaya sesi ini</span>
-                <span class="cost-value" id="costValue">Rp 0</span>
-            </div>
-            <div class="cost-row">
-                <span class="cost-label">Biaya per jam (estimasi)</span>
-                <span class="cost-value" id="costPerHour">Rp 0</span>
-            </div>
-        </div>
-
-        <div class="last-update" id="lastUpdate">Menunggu data...</div>
     </div>
 
-    <script>
-        // ===== MQTT CONFIG =====
-        const MQTT_CONFIG = {
-            host: 'wss://c8a97306a3e246be85a5da1e4f90a358.s1.eu.hivemq.cloud:8884/mqtt',
-            username: 'kwhmeter',
-            password: 'KwhMeter2026!',
-            topicData: 'kwhmeter/data',
-            topicRelayCmd: 'kwhmeter/control/relay',
-            topicRelaySts: 'kwhmeter/status/relay'
-        };
+    <!-- RELAY -->
+    <div class="sw off" id="sw">
+        <div class="sw-l">
+            <div class="sw-i">🔌</div>
+            <div>
+                <div class="sw-lb">Smart Switch</div>
+                <div class="sw-v" id="swV">--</div>
+            </div>
+        </div>
+        <button class="tgl" id="tgl" onclick="toggle()"></button>
+    </div>
 
-        const TARIF_PER_KWH = 1444.70;
-        const MAX_POWER = 500;
+    <!-- ALERT BANNER -->
+    <div class="alert" id="alert"></div>
 
-        let mqttClient = null;
-        let connected = false;
-        let messageCount = 0;
-        let startTime = Date.now();
-        let currentRelayState = false;
+    <!-- POWER -->
+    <div class="pwr" id="pwrCard">
+        <div class="pwr-lb">Daya Aktif</div>
+        <div class="pwr-n" id="pwr">--<span class="pwr-u">W</span></div>
+        <div class="pwr-bar"><div class="pwr-fill" id="bar"></div></div>
+        <div class="pwr-info"><span>0</span><span id="barMax">500W</span></div>
+    </div>
 
-        // ===== DOM =====
-        const el = {
-            statusDot: document.getElementById('statusDot'),
-            statusText: document.getElementById('statusText'),
-            offlineMsg: document.getElementById('offlineMsg'),
-            powerValue: document.getElementById('powerValue'),
-            powerBar: document.getElementById('powerBar'),
-            voltageValue: document.getElementById('voltageValue'),
-            currentValue: document.getElementById('currentValue'),
-            energyValue: document.getElementById('energyValue'),
-            pfValue: document.getElementById('pfValue'),
-            freqValue: document.getElementById('freqValue'),
-            uptimeValue: document.getElementById('uptimeValue'),
-            costValue: document.getElementById('costValue'),
-            costPerHour: document.getElementById('costPerHour'),
-            lastUpdate: document.getElementById('lastUpdate'),
-            relayCard: document.getElementById('relayCard'),
-            relayStatus: document.getElementById('relayStatus'),
-            relayToggle: document.getElementById('relayToggle'),
-        };
+    <!-- BEBAN DETECTION -->
+    <div class="beban">
+        <div class="beban-ttl">Deteksi Beban</div>
+        <div class="beban-row">
+            <div class="beban-ico" id="bebanIco">⏳</div>
+            <div class="beban-info">
+                <div class="beban-name" id="bebanName">Menunggu data...</div>
+                <div class="beban-range" id="bebanRange">--</div>
+            </div>
+        </div>
+    </div>
 
-        // ===== TOGGLE RELAY =====
-        function toggleRelay() {
-            if (!mqttClient || !connected) return;
-            const newState = !currentRelayState;
-            mqttClient.publish(MQTT_CONFIG.topicRelayCmd, newState ? 'ON' : 'OFF');
-            console.log('[MQTT] Sent relay command:', newState ? 'ON' : 'OFF');
-        }
+    <!-- METRICS -->
+    <div class="grid">
+        <div class="cell c1"><div class="cell-v" id="volt">--<span class="cell-u">V</span></div><div class="cell-n">Tegangan</div></div>
+        <div class="cell c2"><div class="cell-v" id="amp">--<span class="cell-u">A</span></div><div class="cell-n">Arus</div></div>
+        <div class="cell c3"><div class="cell-v" id="kwh">--<span class="cell-u">kWh</span></div><div class="cell-n">Energi</div></div>
+        <div class="cell c4"><div class="cell-v" id="pf">--</div><div class="cell-n">Power Factor</div></div>
+        <div class="cell c5"><div class="cell-v" id="hz">--<span class="cell-u">Hz</span></div><div class="cell-n">Frekuensi</div></div>
+        <div class="cell c6"><div class="cell-v" id="rph">--</div><div class="cell-n">Rp/jam</div></div>
+    </div>
 
-        function updateRelayUI(isOn) {
-            currentRelayState = isOn;
-            el.relayStatus.textContent = isOn ? 'ON' : 'OFF';
-            el.relayStatus.className = 'relay-status ' + (isOn ? 'on' : 'off');
-            el.relayToggle.className = 'toggle-btn ' + (isOn ? 'on' : '');
-            el.relayCard.className = 'relay-card ' + (isOn ? 'relay-on' : 'relay-off');
-        }
+    <!-- SESSION STATS -->
+    <div class="stats">
+        <div class="stats-ttl">Statistik Sesi</div>
+        <div class="stats-grid">
+            <div class="stats-item">
+                <div class="stats-val" id="sMax">0<span class="cell-u">W</span></div>
+                <div class="stats-lbl">Daya Max</div>
+            </div>
+            <div class="stats-item">
+                <div class="stats-val" id="sAvg">0<span class="cell-u">W</span></div>
+                <div class="stats-lbl">Rata-rata</div>
+            </div>
+            <div class="stats-item">
+                <div class="stats-val" id="sDur">0m</div>
+                <div class="stats-lbl">Durasi</div>
+            </div>
+        </div>
+    </div>
 
-        // ===== MQTT =====
-        function connectMQTT() {
-            el.statusText.textContent = 'Connecting...';
+    <!-- THRESHOLD -->
+    <div class="thr">
+        <div class="thr-ttl">Batas Daya</div>
+        <div class="thr-row">
+            <span class="thr-label">⚠️ Warning</span>
+            <span class="thr-value warn-c" id="thrWarnVal">500W</span>
+        </div>
+        <div class="slider-wrap">
+            <input type="range" class="slider warn-s" id="thrWarn" min="50" max="2000" step="50" value="500" oninput="updateThreshold()">
+        </div>
+        <div class="thr-row" style="margin-top:8px">
+            <span class="thr-label">🚨 Danger</span>
+            <span class="thr-value danger-c" id="thrDanVal">1000W</span>
+        </div>
+        <div class="slider-wrap">
+            <input type="range" class="slider danger-s" id="thrDan" min="100" max="2200" step="50" value="1000" oninput="updateThreshold()">
+        </div>
+    </div>
 
-            mqttClient = mqtt.connect(MQTT_CONFIG.host, {
-                username: MQTT_CONFIG.username,
-                password: MQTT_CONFIG.password,
-                clientId: 'web-kwh-' + Math.random().toString(16).substring(2, 8),
-                clean: true,
-                reconnectPeriod: 5000,
-            });
+    <!-- COST -->
+    <div class="cst">
+        <div class="cst-ttl">Estimasi Biaya</div>
+        <div class="cst-row"><span class="cst-k">Tarif PLN (R-1/1300VA)</span><span class="cst-v">Rp 1.444</span></div>
+        <div class="cst-row"><span class="cst-k">Sesi ini</span><span class="cst-v" id="cSes">Rp 0</span></div>
+        <div class="cst-row"><span class="cst-k">Per jam</span><span class="cst-v" id="cHr">Rp 0</span></div>
+        <div class="cst-row"><span class="cst-k">Per hari (estimasi)</span><span class="cst-v" id="cDay">Rp 0</span></div>
+    </div>
 
-            mqttClient.on('connect', () => {
-                connected = true;
-                el.statusDot.classList.add('online');
-                el.statusText.textContent = 'Online';
-                el.offlineMsg.classList.remove('show');
-                mqttClient.subscribe(MQTT_CONFIG.topicData);
-                mqttClient.subscribe(MQTT_CONFIG.topicRelaySts);
-                console.log('[MQTT] Connected!');
-            });
+    <div class="ftr" id="ftr">Menunggu data...</div>
+</div>
 
-            mqttClient.on('message', (topic, message) => {
-                try {
-                    const msg = message.toString();
+<script>
+const MQ={
+    host:'wss://c8a97306a3e246be85a5da1e4f90a358.s1.eu.hivemq.cloud:8884/mqtt',
+    user:'kwhmeter',pass:'KwhMeter2026!',
+    data:'kwhmeter/data',cmd:'kwhmeter/control/relay',stat:'kwhmeter/status/relay'
+};
+const TARIF=1444.70;
+let cli=null,ron=false,mc=0;
+let thrWarn=500,thrDan=1000;
+let startTime=Date.now(),pMax=0,pSum=0,pCount=0;
+const $=id=>document.getElementById(id);
 
-                    if (topic === MQTT_CONFIG.topicRelaySts) {
-                        updateRelayUI(msg === 'ON');
-                        return;
-                    }
+// RELAY
+function toggle(){if(cli)cli.publish(MQ.cmd,ron?'OFF':'ON')}
+function uRelay(on){
+    ron=on;
+    $('swV').textContent=on?'ON':'OFF';
+    $('tgl').className='tgl'+(on?' on':'');
+    $('sw').className='sw '+(on?'on':'off');
+}
 
-                    if (topic === MQTT_CONFIG.topicData) {
-                        const data = JSON.parse(msg);
-                        messageCount++;
-                        updateDashboard(data);
+// THRESHOLD
+function updateThreshold(){
+    thrWarn=parseInt($('thrWarn').value);
+    thrDan=parseInt($('thrDan').value);
+    if(thrDan<=thrWarn){thrDan=thrWarn+50;$('thrDan').value=thrDan}
+    $('thrWarnVal').textContent=thrWarn+'W';
+    $('thrDanVal').textContent=thrDan+'W';
+    $('barMax').textContent=thrDan+'W';
+}
 
-                        // Update relay dari data payload juga
-                        if (data.relay !== undefined) {
-                            updateRelayUI(data.relay === 'ON');
-                        }
-                    }
-                } catch (e) {
-                    console.error('[MQTT] Parse error:', e);
-                }
-            });
+// BEBAN DETECTION
+function detectBeban(p){
+    if(p<1)return{ico:'💤',name:'Tidak ada beban',range:'0W'};
+    if(p<20)return{ico:'🔋',name:'Standby / Charger kecil',range:'1-20W'};
+    if(p<60)return{ico:'💡',name:'Lampu LED',range:'20-60W'};
+    if(p<120)return{ico:'🌀',name:'Kipas Angin',range:'60-120W'};
+    if(p<250)return{ico:'💻',name:'Laptop / Monitor',range:'120-250W'};
+    if(p<500)return{ico:'🔥',name:'Setrika / Rice Cooker',range:'250-500W'};
+    if(p<1200)return{ico:'❄️',name:'AC / Kulkas',range:'500-1200W'};
+    return{ico:'⚡',name:'Beban Berat',range:'>1200W'};
+}
 
-            mqttClient.on('offline', () => {
-                connected = false;
-                el.statusDot.classList.remove('online');
-                el.statusText.textContent = 'Offline';
-                el.offlineMsg.classList.add('show');
-            });
+// ALERT
+function checkAlert(p){
+    const alert=$('alert');
+    const card=$('pwrCard');
+    if(p>=thrDan){
+        alert.className='alert danger';
+        alert.textContent='🚨 BAHAYA — Daya melebihi batas '+thrDan+'W!';
+        card.className='pwr alert-danger';
+    }else if(p>=thrWarn){
+        alert.className='alert warn';
+        alert.textContent='⚠️ Peringatan — Daya mendekati batas ('+thrWarn+'W)';
+        card.className='pwr alert-warn';
+    }else{
+        alert.className='alert';
+        card.className='pwr';
+    }
+}
 
-            mqttClient.on('error', (err) => {
-                console.error('[MQTT] Error:', err);
-                el.statusText.textContent = 'Error';
-                el.offlineMsg.classList.add('show');
-            });
+// STATS
+function updateStats(p){
+    if(p>pMax)pMax=p;
+    pSum+=p;pCount++;
+    const avg=pCount>0?pSum/pCount:0;
+    const dur=Math.floor((Date.now()-startTime)/1000);
+    const h=Math.floor(dur/3600);
+    const m=Math.floor((dur%3600)/60);
+    const s=dur%60;
 
-            mqttClient.on('reconnect', () => {
-                el.statusText.textContent = 'Reconnecting...';
-            });
-        }
+    $('sMax').innerHTML=`${pMax.toFixed(0)}<span class="cell-u">W</span>`;
+    $('sAvg').innerHTML=`${avg.toFixed(0)}<span class="cell-u">W</span>`;
+    $('sDur').textContent=h>0?`${h}h ${m}m`:`${m}m ${s}s`;
+}
 
-        // ===== UPDATE DASHBOARD =====
-        function updateDashboard(data) {
-            const power = data.power || 0;
-            el.powerValue.innerHTML = `${power.toFixed(1)}<span class="power-unit">W</span>`;
+// UPDATE
+function upd(d){
+    mc++;
+    const p=d.power||0;
 
-            const pct = Math.min((power / MAX_POWER) * 100, 100);
-            el.powerBar.style.width = pct + '%';
+    // Power display
+    $('pwr').innerHTML=`${p.toFixed(1)}<span class="pwr-u">W</span>`;
+    const pct=Math.min((p/thrDan)*100,100);
+    $('bar').style.width=pct+'%';
 
-            if (power > MAX_POWER * 0.8) {
-                el.powerValue.className = 'power-value danger';
-                el.powerBar.className = 'power-bar-fill warning';
-            } else if (power > MAX_POWER * 0.6) {
-                el.powerValue.className = 'power-value warning';
-                el.powerBar.className = 'power-bar-fill warning';
-            } else {
-                el.powerValue.className = 'power-value';
-                el.powerBar.className = 'power-bar-fill';
-            }
+    const cls=p>=thrDan?'danger':p>=thrWarn?'warn':'';
+    $('pwr').className='pwr-n'+(cls?' '+cls:'');
+    $('bar').className='pwr-fill'+(cls?' '+cls:'');
 
-            el.voltageValue.innerHTML = `${(data.voltage || 0).toFixed(1)}<span class="metric-unit">V</span>`;
-            el.currentValue.innerHTML = `${(data.current || 0).toFixed(2)}<span class="metric-unit">A</span>`;
-            el.energyValue.innerHTML = `${(data.energy || 0).toFixed(3)}<span class="metric-unit">kWh</span>`;
-            el.pfValue.textContent = (data.pf || 0).toFixed(2);
-            el.freqValue.innerHTML = `${(data.frequency || 0).toFixed(1)}<span class="metric-unit">Hz</span>`;
+    // Metrics
+    $('volt').innerHTML=`${(d.voltage||0).toFixed(1)}<span class="cell-u">V</span>`;
+    $('amp').innerHTML=`${(d.current||0).toFixed(2)}<span class="cell-u">A</span>`;
+    $('kwh').innerHTML=`${(d.energy||0).toFixed(3)}<span class="cell-u">kWh</span>`;
+    $('pf').textContent=(d.pf||0).toFixed(2);
+    $('hz').innerHTML=`${(d.frequency||0).toFixed(1)}<span class="cell-u">Hz</span>`;
 
-            const energy = data.energy || 0;
-            const cost = energy * TARIF_PER_KWH;
-            el.costValue.textContent = `Rp ${cost.toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+    // Cost
+    const e=d.energy||0;
+    const cS=Math.round(e*TARIF);
+    const cH=Math.round((p/1000)*TARIF);
+    $('rph').textContent=cH.toLocaleString('id-ID');
+    $('cSes').textContent=`Rp ${cS.toLocaleString('id-ID')}`;
+    $('cHr').textContent=`Rp ${cH.toLocaleString('id-ID')}`;
+    $('cDay').textContent=`Rp ${(cH*24).toLocaleString('id-ID')}`;
 
-            const costHour = (power / 1000) * TARIF_PER_KWH;
-            el.costPerHour.textContent = `Rp ${costHour.toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 0})}`;
+    // Beban detection
+    const b=detectBeban(p);
+    $('bebanIco').textContent=b.ico;
+    $('bebanName').textContent=b.name;
+    $('bebanRange').textContent=b.range;
 
-            const now = new Date();
-            el.lastUpdate.textContent = `Update terakhir: ${now.toLocaleTimeString('id-ID')} · ${messageCount} pesan diterima`;
-        }
+    // Alert
+    checkAlert(p);
 
-        // ===== UPTIME =====
-        setInterval(() => {
-            const diff = Math.floor((Date.now() - startTime) / 1000);
-            const h = Math.floor(diff / 3600);
-            const m = Math.floor((diff % 3600) / 60);
-            const s = diff % 60;
-            el.uptimeValue.textContent = `${h}h ${m}m ${s}s`;
-        }, 1000);
+    // Stats
+    updateStats(p);
 
-        // ===== START =====
-        connectMQTT();
-    </script>
+    // Relay
+    if(d.relay!==undefined)uRelay(d.relay==='ON');
+
+    // Footer
+    $('ftr').textContent=`${new Date().toLocaleTimeString('id-ID')} · ${mc} msg`;
+}
+
+// MQTT
+cli=mqtt.connect(MQ.host,{username:MQ.user,password:MQ.pass,clientId:'w-'+Math.random().toString(16).substr(2,6),clean:true,reconnectPeriod:5000});
+cli.on('connect',()=>{$('dot').classList.add('on');$('sts').textContent='Online';cli.subscribe(MQ.data);cli.subscribe(MQ.stat)});
+cli.on('message',(t,m)=>{try{const s=m.toString();if(t===MQ.stat){uRelay(s==='ON');return}if(t===MQ.data)upd(JSON.parse(s))}catch(e){console.error(e)}});
+cli.on('offline',()=>{$('dot').classList.remove('on');$('sts').textContent='Offline'});
+cli.on('reconnect',()=>{$('sts').textContent='Reconnecting'});
+
+// Duration timer
+setInterval(()=>{if(pCount>0)updateStats(0);pCount--},0);
+</script>
 </body>
 </html>
